@@ -97,14 +97,17 @@ class PairCmpDataGeneratorTrain(keras.utils.Sequence):
             # read from the data file and construct the instances
             a_data = InteractionData(a_id, self.dataDir)
             a_data_top = a_data.matrix[0:10, :]
-            a_data_bottom = a_data.matrix[90:, :]
+            #a_data_bottom = a_data.matrix[90:, :]
+            a_data_bottom = a_data.matrix[-10:, :]
+            
             a_feature = np.asarray(self.qid_features.get(int(a_id)))
             a_feature = np.pad(a_feature, (0, 10 * 120 * 1 - 78), 'constant')
             assert a_data_bottom.shape == (10,120), a_id
 
             b_data = InteractionData(b_id, self.dataDir)
             b_data_top = b_data.matrix[0:10, :]
-            b_data_bottom = b_data.matrix[90:, :]
+            #b_data_bottom = b_data.matrix[90:, :]
+            b_data_bottom = b_data.matrix[-10:, :]
             b_feature = np.asarray(self.qid_features.get(int(b_id)))
             b_feature = np.pad(b_feature, (0, 10 * 120 * 1 - 78), 'constant')
             assert b_data_bottom.shape == (10,120), b_id
