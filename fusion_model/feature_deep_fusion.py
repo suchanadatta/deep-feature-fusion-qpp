@@ -287,7 +287,8 @@ def main():
                                 # verbose=1)
 
     siamese_model.save_weights(args.checkpoint)
-    test_generator = PairCmpDataGeneratorTest(allPairsList_test, qid_features, dataFolder=args.test_hist)
+    test_generator = PairCmpDataGeneratorTest(allPairsList_test, qid_features, dataFolder=args.test_hist, batch_size=1,
+                                              dim=(args.top_docs, args.max_query_length * args.bin_size, args.num_channel))
     predictions = siamese_model.predict(test_generator)
     # print('predict ::: ', predictions)
     # print('predict shape ::: ', predictions.shape)
