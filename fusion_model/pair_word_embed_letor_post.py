@@ -97,7 +97,6 @@ class PairCmpDataGeneratorTrain(keras.utils.Sequence):
             # read from the data file and construct the instances
             a_data = InteractionData(a_id, self.dataDir)
             a_data_top = a_data.matrix[0:10, :]
-            #a_data_bottom = a_data.matrix[90:, :]
             a_data_bottom = a_data.matrix[-10:, :]
             
             a_feature = np.asarray(self.qid_features.get(int(a_id)))
@@ -106,7 +105,6 @@ class PairCmpDataGeneratorTrain(keras.utils.Sequence):
 
             b_data = InteractionData(b_id, self.dataDir)
             b_data_top = b_data.matrix[0:10, :]
-            #b_data_bottom = b_data.matrix[90:, :]
             b_data_bottom = b_data.matrix[-10:, :]
             b_feature = np.asarray(self.qid_features.get(int(b_id)))
             b_feature = np.pad(b_feature, (0, 10 * 120 * 1 - 78), 'constant')
@@ -241,6 +239,29 @@ def build_siamese(input_shape):
                         outputs=predictions)
     return siamese_net
 
+def score_aggregate(predict_file, qpp_file):
+    pred_confidence = pd.read_csv(predict_file, delimiter='\t')
+    # print(pred_confidence)
+    uniq_qids = list(set(pred_confidence['qid-a']))
+    print('Unique qids : ', uniq_qids)
+    qid_qpp_dict = {}
+    for qid in uniq_qids:
+        sliced_df_qid_a = pred_confidence.loc[(pred_confidence['qid-a'] == qid), ['qid-a', 'qid-b', 'pred']]
+        sliced_df_qid_b = pred_confidence.loc[(pred_confidence['qid-b'] == qid), ['qid-a', 'qid-b', 'pred']]
+        qid_qpp_dict[qid] = round(float(sliced_df_qid_a['pred'].sum() / len(sliced_df_qid_a['pred'])), 5) + \
+                            round(float(1 - sliced_df_qid_b['pred'].sum() / len(sliced_df_qid_b['pred'])), 5)
+    print('Pred QPP : ', qid_qpp_dict)
+
+    # min-max normalize
+    out_file = open(qpp_file, 'a')
+    qpp_norm = ''
+    for qid, qpp in qid_qpp_dict.items():
+        norm = round((float(qpp) - min(qid_qpp_dict.values())) /
+                     (max(qid_qpp_dict.values()) - min(qid_qpp_dict.values())), 5)
+        qpp_norm += str(qid) + '\t' + str(norm) + '\n'
+    out_file.write(qpp_norm)
+    out_file.close()
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--train-hist', default='../data/test') # histograms for training query set
@@ -286,27 +307,34 @@ def main():
                                 use_multiprocessing=True,
                                 epochs=args.epochs,
                                 workers=4)
-                                # validation_split=0.2,
-                                # verbose=1)
-
     siamese_model.save_weights(args.checkpoint)
     test_generator = PairCmpDataGeneratorTest(allPairsList_test, qid_features, dataFolder=args.test_hist, batch_size=1,
                                               dim=(args.top_docs, args.max_query_length * args.bin_size, args.num_channel))
-    predictions = siamese_model.predict(test_generator)
-    # print('predict ::: ', predictions)
-    # print('predict shape ::: ', predictions.shape)
-    with open(args.prediction, 'w') as outFile:     # (9)
+
+    # predict scores
+    predict_list = []
+    for x in test_generator:
+        predictions = siamese_model.predict([x], verbose=0)
+        print('Predictions : ', predictions)
+        predict_list.append(predictions[0][0])
+    print(predict_list)
+
+    # write predictions
+    with open(args.prediction, 'w') as outFile:
         i = 0
+        res = 'qid-a\tqid-b\tpred\tconfidence\n'
         for entry in test_generator.paired_instances_ids:
-            if predictions[i][0] >= 0.5:
-                outFile.write(entry.qid_a + '\t' + entry.qid_b + '\t' + str(round(predictions[i][0], 4)) + '\t' + '1\n')
+            if predict_list[i] >= 0.5:
+                res += str(entry.qid_a) + '\t' + str(entry.qid_b) + '\t' + str(round(predict_list[i], 4)) + '\t1\n'
             else:
-                outFile.write(entry.qid_a + '\t' + entry.qid_b + '\t' + str(round(predictions[i][0], 4)) + '\t' + '0\n')
+                res += str(entry.qid_a) + '\t' + str(entry.qid_b) + '\t' + str(round(predict_list[i], 4)) + '\t0\n'
             i += 1
+        print(res)
+        outFile.write(res)
     outFile.close()
 
     # measure accuracy
-    gt_file = np.genfromtxt(args.test_ap_pairs_gt, delimiter='\t')    # (10)
+    gt_file = np.genfromtxt(args.test_ap_pairs_gt, delimiter='\t')
     actual = gt_file[:, 2:]
     # print(actual)
     predict_file = np.genfromtxt(args.prediction, delimiter='\t')
@@ -314,6 +342,8 @@ def main():
     # print(predict)
     score = accuracy_score(actual, predict)
     print('Accuracy : ', round(score, 4))
+
+    score_aggregate(args.prediction, args.qpp_out_file)
 
 if __name__ == '__main__':
     main()
