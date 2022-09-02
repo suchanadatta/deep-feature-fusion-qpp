@@ -8,6 +8,7 @@ from keras.layers import concatenate
 from tensorflow.keras import layers
 import tensorflow as tf
 from sklearn.metrics import accuracy_score
+import eval_rank_corr as eval
 
 seed_value = 12321
 os.environ['PYTHONHASHSEED'] = str(seed_value)
@@ -298,6 +299,7 @@ def score_aggregate(predict_file, qpp_file):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--ap_path',  default='../data/per_query_ap100') #per query ap100 scores
     parser.add_argument('--train-hist', default='../data/interaction_letor_hist') # histograms for training query set
     parser.add_argument('--test-hist', default='../data/interaction_letor_hist') # histograms for test query set
     parser.add_argument('--train-ap-pairs', default='../data/train_pair_ap100_trec6_8_robust') # GT for training set <qid-a \t qid-b \t relativeAP(0/1)>
@@ -306,6 +308,7 @@ def main():
     parser.add_argument('--num-query-feature', default=37, type=int)
     parser.add_argument('--checkpoint', default='../checkpoint/model.weights')
     parser.add_argument('--prediction', default='../data/model.pred')
+    parser.add_argument('--qpp-out-file', default='../data/qpp_ap100_predicted')
     parser.add_argument('--top-docs', default=10, type=int)
     parser.add_argument('--bottom-docs', default=10, type=int)
     parser.add_argument('--max-query-length', default=4, type=int)
@@ -378,6 +381,39 @@ def main():
     print('Accuracy : ', round(score, 4))
 
     score_aggregate(args.prediction, args.qpp_out_file)
+    
+    uniq_test_set = set()
+    with open(args.test_ap_pairs, 'r') as f:
+        content = f.readlines()  
+        for line in content:
+            uniq_test_set.add(line.strip().split('\t')[0])
+    
+    query_ap_dict = {}
+    with open(args.ap_path, 'r') as f:
+        content = f.readlines()
+        for line in content:
+            query_ap_dict[line.strip().split('\t')[0]] = line.strip().split('\t')[1]
 
+    test_ground_truth = []
+    for qid in uniq_test_set:
+        test_ground_truth.append(float(query_ap_dict.get(qid)))
+
+    qpp_dict = {}
+    with open(args.qpp_file_path, 'r') as f:
+        content = f.readlines()
+        for line in content:
+            qpp_dict[line.strip().split('\t')[0]] = float(line.strip().split('\t')[1])
+        
+    qpp_estimate = []
+    for qid in uniq_test_set:
+        qpp_estimate.append(qpp_dict.get(qid))
+            
+    # measure rank-correlations
+    r, rho, tau = eval.reportRankCorr(test_ground_truth, qpp_estimate)
+    pearsons = r
+    spearmans = rho
+    kendalls = tau
+    print('P-r = {:,.4f}, S-rho = {:.4f}, K-tau = {:.4f}'.format(pearsons, spearmans, kendalls))
+    
 if __name__ == '__main__':
     main()
