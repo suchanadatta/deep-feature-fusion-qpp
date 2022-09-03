@@ -1,0 +1,1 @@
+The folder contains two scripts. One is for pairwise-training and pair-wise inference (pointwise eval by score aggregation). The second is for pairwise-training and point-wise inference.
